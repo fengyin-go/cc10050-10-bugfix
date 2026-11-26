@@ -108,19 +108,33 @@ class ParseAuditService(BaseModuleService):
         }
 
     def publish_metrics(self, entry_id: int) -> dict[str, Any]:
-        """把审计结论发布到采集量指标作为解析量口径。"""
+        """把审计结论发布到采集量指标作为解析量口径。
+
+        归属治理：解析模板名不是站点，只有当它能在站点目录解析为真实站点时才允许
+        发布，否则拒绝，避免产生无法追溯到站点的指标行。
+        """
+        from app.services.collect_metrics import CollectMetricsService
+
         entry = store.find(self.MODULE, entry_id)
         if entry is None:
             return {"ok": False, "message": "审计明细不存在"}
+        site_domain = str(entry.get("解析模板", "") or "")
+        metrics_service = CollectMetricsService()
+        if metrics_service.resolve_site(site_domain) is None:
+            return {
+                "ok": False,
+                "message": f"解析模板 {site_domain or '（空）'} 无法对应真实站点，拒绝发布站点指标（不产生空站点）",
+            }
         metrics = store.rows("collect_metrics")
-        row = next((m for m in metrics if m.get("站点名称") == entry.get("解析模板", "")), None)
+        row = next((m for m in metrics if m.get("站点名称") == site_domain), None)
         if row is None:
             mid = max((int(m.get("id", 0)) for m in metrics), default=0) + 1
             metrics.append({
                 "id": mid,
                 "统计时间": datetime.now(timezone.utc).isoformat(),
-                "站点名称": entry.get("解析模板", ""),
-                "抓取量": entry.get("样本总数", "0"),
+                "站点名称": site_domain,
+                "站点显示名": metrics_service.resolve_site(site_domain).get("站点名称", ""),
+                "抓取量": "0",
                 "解析量": entry.get("样本总数", "0"),
                 "产出量": "0",
                 "status": entry.get("status", "正常"),

@@ -47,18 +47,42 @@ class FailureQuarantineService(BaseModuleService):
         }
 
     def mark_restored(self, entry_id: int) -> dict[str, Any]:
-        """标记样本已恢复并把恢复量回写采集量指标。"""
+        """标记样本已恢复并把恢复量回写采集量指标。
+
+        归属治理：只有隔离记录携带可解析的真实站点时才回写指标，绝不在站点不明时
+        随便挑一条指标行（默认站点）加量。
+        """
+        from app.services.collect_metrics import CollectMetricsService
+
         entry = store.find(self.MODULE, entry_id)
         if entry is None:
             return {"ok": False, "message": "隔离记录不存在"}
         entry["status"] = "已恢复"
         entry["pending"] = False
         entry["abnormal"] = False
-        metrics = store.rows("collect_metrics")
-        row = next((m for m in metrics if m.get("status") != "断采"), None)
+        site = str(entry.get("站点名称", "") or "")
+        metrics_service = CollectMetricsService()
+        site_row = metrics_service.resolve_site(site)
+        if site_row is None:
+            return {
+                "ok": True,
+                "message": "样本已恢复；隔离记录未携带可确定站点，未回写任何站点指标（不使用默认站点）",
+                "fingerprint": entry.get("样本指纹", ""),
+                "metrics_updated": False,
+            }
+        row = next(
+            (m for m in store.rows("collect_metrics") if m.get("站点名称") == site),
+            None,
+        )
         if row is not None:
             row["产出量"] = str(int(row.get("产出量", "0") or 0) + 1)
-        return {"ok": True, "message": "样本已恢复", "fingerprint": entry.get("样本指纹", "")}
+        return {
+            "ok": True,
+            "message": "样本已恢复",
+            "fingerprint": entry.get("样本指纹", ""),
+            "metrics_updated": row is not None,
+            "site": site,
+        }
 
     def discard(self, entry_id: int, reason: str) -> dict[str, Any]:
         """丢弃无法恢复的样本并记录最终原因。"""

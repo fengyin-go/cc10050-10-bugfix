@@ -47,7 +47,17 @@
       </thead>
       <tbody>
         <tr v-for="row in rows" :key="String(row.id)" :data-testid="`row-${row.id}`" :data-status="String(row.status)">
-          <td v-for="column in meta.fields" :key="column">{{ row[column] ?? '—' }}</td>
+          <td v-for="column in meta.fields" :key="column">
+            <RouterLink
+              v-if="meta.key === 'collect_metrics' && column === '站点名称' && row[column]"
+              class="link"
+              data-testid="open-actual-site"
+              :to="`/shop_site?${encodeURIComponent('站点域名')}=${encodeURIComponent(String(row[column]))}`"
+            >
+              {{ row[column] }}
+            </RouterLink>
+            <template v-else>{{ row[column] ?? '—' }}</template>
+          </td>
           <td>{{ row.status }}</td>
           <td class="row-actions">
             <button
@@ -95,6 +105,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 
 import {
   createEntry,
@@ -106,11 +117,19 @@ import {
 import type { EntryRow } from '@/data/types'
 
 const props = defineProps<{ moduleKey: string }>()
+const route = useRoute()
 const meta = moduleMeta(props.moduleKey)
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
-const filters = ref<Record<string, string>>({})
+// 支持从其他页面（如采集量指标治理）带查询参数打开并自动筛选实际站点
+const filters = ref<Record<string, string>>(
+  Object.fromEntries(
+    Object.entries(route.query)
+      .filter(([key]) => meta.fields.includes(key))
+      .map(([key, value]) => [key, String(value)]),
+  ),
+)
 const filterFields = meta.fields.slice(0, 3)
 const showCreate = ref(false)
 const creating = ref(false)

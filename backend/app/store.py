@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from app.seed import SEED_ROWS
+from app.seed import SCENARIO_TABLES, SCENARIO_SEED, SEED_ROWS
 
 
 class Store:
@@ -26,6 +26,15 @@ class Store:
             if int(row.get("id", 0)) == entry_id:
                 return row
         return None
+
+    def reset_scenario(self) -> dict[str, list[dict[str, Any]]]:
+        """把回执归属治理场景涉及的表整体还原到种子状态，供复现与回归测试。"""
+        restored: dict[str, list[dict[str, Any]]] = {}
+        for table in SCENARIO_TABLES:
+            fresh = [dict(row) for row in SCENARIO_SEED.get(table, [])]
+            self._tables[table] = fresh
+            restored[table] = fresh
+        return restored
 
     def overview(self) -> dict[str, object]:
         modules: list[dict[str, object]] = []

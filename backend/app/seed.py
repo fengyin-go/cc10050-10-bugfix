@@ -545,3 +545,169 @@ SEED_ROWS: dict[str, list[dict[str, Any]]] = {
   '解析量': '采集量指标样例3',
   '产出量': '采集量指标样例3'}]
 }
+
+# ---------------------------------------------------------------------------
+# 执行回执归属治理场景（计划 39 / 北站 / 同名南站任务 / 失去关联的迟到回执）
+#
+# 关键事实：
+# - 旧任务（id=900）与新任务（id=901）同名「同名采集-北区行情」，但目标站点不同；
+# - 执行轮次 3901 是旧任务在北站产生的，回执 RC-39-01 迟到且丢失了任务关联；
+# - 同名不能证明归属，回执必须凭执行来源（轮次/任务ID/原站点）核对；
+# - 北站当前抓取量为 5，回执继续成功后只能变成 6，任何情况下南站不得加量。
+# ---------------------------------------------------------------------------
+
+SCENARIO_TABLES = (
+    "shop_site",
+    "price_crawler",
+    "crawl_schedule",
+    "execution_round",
+    "execution_receipt",
+    "collect_metrics",
+    "metrics_ledger",
+    "site_backfill",
+)
+
+
+def _scenario_rows() -> dict[str, list[dict[str, Any]]]:
+    """构造一份全新的场景数据；reset 场景时整体替换这些表。"""
+    return {
+        "shop_site": [
+            {
+                "id": 901,
+                "status": "已验证",
+                "pending": False,
+                "abnormal": False,
+                "站点名称": "北站",
+                "站点域名": "north.example.com",
+                "采集区域": "北区",
+                "语言标识": "zh-CN",
+                "生效货币": "CNY",
+            },
+            {
+                "id": 902,
+                "status": "已验证",
+                "pending": False,
+                "abnormal": False,
+                "站点名称": "南站",
+                "站点域名": "south.example.com",
+                "采集区域": "南区",
+                "语言标识": "zh-CN",
+                "生效货币": "CNY",
+            },
+        ],
+        "price_crawler": [
+            {
+                "id": 900,
+                "status": "采集失败",
+                "pending": True,
+                "abnormal": True,
+                "任务名称": "同名采集-北区行情",
+                "目标站点": "north.example.com",
+                "商品关键词": "北区行情",
+                "抓取深度": "2",
+                "采集间隔": "60m",
+            },
+            {
+                "id": 901,
+                "status": "运行中",
+                "pending": True,
+                "abnormal": False,
+                "任务名称": "同名采集-北区行情",
+                "目标站点": "south.example.com",
+                "商品关键词": "南区行情",
+                "抓取深度": "2",
+                "采集间隔": "60m",
+            },
+        ],
+        "crawl_schedule": [
+            {
+                "id": 39,
+                "status": "执行中",
+                "pending": True,
+                "abnormal": False,
+                "计划名称": "计划39-同名任务调度",
+                "关联任务": "同名采集-北区行情",
+                "调度周期": "60m",
+                "下次执行": "2026-11-26T03:00:00+00:00",
+                "上次状态": "等待回执",
+            },
+        ],
+        "execution_round": [
+            {
+                "id": 3901,
+                "计划id": 39,
+                "轮次编号": "R39-01",
+                "任务id": 900,
+                "任务名称": "同名采集-北区行情",
+                "来源站点": "north.example.com",
+                "来源站点名称": "北站",
+                "抓取量": 5,
+                "执行时间": "2026-11-26T01:00:00+00:00",
+                "status": "已执行",
+                "pending": False,
+                "abnormal": False,
+            },
+        ],
+        "execution_receipt": [
+            {
+                "id": 1,
+                "回执编号": "RC-39-01",
+                "执行轮次id": 3901,
+                "计划id": 39,
+                "任务id": None,
+                "任务名称": "同名采集-北区行情",
+                "原执行站点": "north.example.com",
+                "原执行站点名称": "北站",
+                "抓取量": 1,
+                "上报时间": "2026-11-26T01:05:00+00:00",
+                "最近重投时间": "2026-11-26T02:00:00+00:00",
+                "重投次数": 1,
+                "归属状态": "无法确定站点",
+                "无法确定原因": "回执上报时关联任务已下线，任务关联丢失；当前存在同名新任务（南站），名称相同不能证明归属相同",
+                "解析站点": "",
+                "补记状态": "未补记",
+                "补记人": "",
+                "补记依据": "",
+                "补记时间": "",
+                "入账标识": "",
+                "status": "无法确定站点",
+                "pending": True,
+                "abnormal": True,
+            },
+        ],
+        "collect_metrics": [
+            {
+                "id": 901,
+                "status": "正常",
+                "pending": False,
+                "abnormal": False,
+                "统计时间": "2026-11-26T01:00:00+00:00",
+                "站点名称": "north.example.com",
+                "站点显示名": "北站",
+                "抓取量": "5",
+                "解析量": "5",
+                "产出量": "4",
+            },
+            {
+                "id": 902,
+                "status": "正常",
+                "pending": False,
+                "abnormal": False,
+                "统计时间": "2026-11-26T01:00:00+00:00",
+                "站点名称": "south.example.com",
+                "站点显示名": "南站",
+                "抓取量": "2",
+                "解析量": "2",
+                "产出量": "2",
+            },
+        ],
+        "metrics_ledger": [],
+        "site_backfill": [],
+    }
+
+
+SCENARIO_SEED: dict[str, list[dict[str, Any]]] = _scenario_rows()
+
+# 场景表并入全量种子；场景表以场景数据为准（不含通用样例），保证归属链路自洽。
+for _table, _rows in SCENARIO_SEED.items():
+    SEED_ROWS[_table] = [dict(row) for row in _rows]

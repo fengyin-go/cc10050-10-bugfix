@@ -130,28 +130,19 @@ class PriceCrawlerService(BaseModuleService):
         }
 
     def report_metrics(self, entry_id: int) -> dict[str, Any]:
-        """向采集量指标上报本任务的抓取量。"""
+        """向采集量指标上报本任务的抓取量（可追溯、幂等，站点不明时拒绝）。"""
         entry = store.find(self.MODULE, entry_id)
         if entry is None:
             return {"ok": False, "message": "任务不存在"}
         domain = entry.get("目标站点", "")
-        rows = store.rows("collect_metrics")
-        row = next((r for r in rows if r.get("站点名称") == domain), None)
-        now = datetime.now(timezone.utc).isoformat()
-        if row is None:
-            mid = max((int(r.get("id", 0)) for r in rows), default=0) + 1
-            rows.append({
-                "id": mid,
-                "统计时间": now,
-                "站点名称": domain,
-                "抓取量": "1",
-                "解析量": "0",
-                "产出量": "0",
-                "status": "正常",
-                "pending": True,
-                "abnormal": False,
-            })
-        else:
-            row["抓取量"] = str(int(row.get("抓取量", "0") or 0) + 1)
-            row["统计时间"] = now
-        return {"ok": True, "message": "抓取量已上报", "site": domain}
+        from app.services.collect_metrics import CollectMetricsService
+
+        result = CollectMetricsService().apply_crawl_metric(
+            site=domain,
+            crawled=1,
+            source_type="price_crawler",
+            source_id=entry_id,
+            task_id=entry_id,
+        )
+        result["site"] = domain
+        return result
